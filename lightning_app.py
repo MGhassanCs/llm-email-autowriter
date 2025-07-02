@@ -1,157 +1,103 @@
 """
 Lightning AI application for LLM Email Autowriter
-Configures the app for deployment on Lightning AI platform
+Simplified version for Lightning AI platform deployment
 """
 import lightning as L
-from lightning.app.api import Post
-from lightning.app.components import ServeGradio, BuildConfig
 import subprocess
 import sys
 import os
-from pathlib import Path
-
-class LLMEmailAutowriterWork(L.LightningWork):
-    """
-    Lightning Work for running the email autowriter application
-    """
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.ready = False
-    
-    def run(self):
-        """Run the application setup and start the Gradio interface"""
-        
-        # Install dependencies
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "-r", "requirements.txt"
-        ])
-        
-        # Set up environment
-        os.environ["ENVIRONMENT"] = "production"
-        os.environ["DEBUG"] = "false"
-        os.environ["GRADIO_SHARE"] = "false"  # Lightning handles sharing
-        
-        # Import and launch the UI
-        from app.gradio_ui import launch_ui
-        from app.config import Config
-        
-        config = Config()
-        config.GRADIO_SHARE = False  # Lightning handles this
-        
-        # Mark as ready
-        self.ready = True
-        
-        # Launch the Gradio interface
-        launch_ui(
-            config=config,
-            server_name="0.0.0.0",
-            server_port=7860,
-            share=False,
-            show_error=True
-        )
 
 
-class EmailAutowriterGradioServe(ServeGradio):
+class EmailAutowriterWork(L.LightningWork):
     """
-    Lightning Gradio component for the email autowriter
+    Simplified Lightning Work for the email autowriter application
     """
     
     def __init__(self):
-        super().__init__(
-            LLMEmailAutowriterWork,
-            cloud_build_config=BuildConfig(
-                requirements=["requirements.txt"],
-                dockerfile="Dockerfile"
-            )
-        )
-    
-    def configure_layout(self):
-        """Configure the layout for Lightning AI dashboard"""
-        return {
-            "name": "LLM Email Autowriter",
-            "content": self.work.url + "/gradio"
-        }
-
-
-class LLMEmailAutowriterAPI(L.LightningWork):
-    """
-    Lightning Work for the FastAPI backend
-    """
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(cloud_compute=L.CloudCompute("cpu-medium"))
         self.ready = False
     
     def run(self):
-        """Run the FastAPI server"""
+        """Set up and run the Gradio application"""
         
         # Install dependencies
         subprocess.check_call([
             sys.executable, "-m", "pip", "install", "-r", "requirements.txt"
         ])
         
-        # Set up environment
+        # Set environment variables for production
         os.environ["ENVIRONMENT"] = "production"
         os.environ["DEBUG"] = "false"
+        os.environ["VLLM_HOST"] = "localhost"  # Mock vLLM for now
+        os.environ["VLLM_PORT"] = "8000"
         
-        # Mark as ready
-        self.ready = True
-        
-        # Start FastAPI server
-        subprocess.run([
-            "uvicorn",
-            "app.main:app",
-            "--host", "0.0.0.0",
-            "--port", "8000",
-            "--workers", "1"
-        ])
-    
-    @Post("/generate")
-    def generate_email(self, intent: str, tone: str = "Professional", length: str = "Medium"):
-        """API endpoint for email generation"""
-        if not self.ready:
-            return {"error": "Service not ready"}
-        
+        # Import after installing dependencies
         try:
-            from app.model import get_model
-            model = get_model()
-            email_content = model.generate_email(
-                intent=intent,
-                tone=tone,
-                length=length
+            from app.gradio_ui import create_ui
+            from app.config import Config
+            
+            # Create configuration for Lightning
+            config = Config()
+            config.GRADIO_SHARE = False
+            config.GRADIO_HOST = "0.0.0.0"
+            config.GRADIO_PORT = 7860
+            
+            # Create and launch the UI
+            ui = create_ui(config)
+            self.ready = True
+            
+            # Launch with Lightning-friendly settings
+            ui.launch(
+                server_name="0.0.0.0",
+                server_port=7860,
+                share=False,
+                show_error=True,
+                quiet=False
             )
-            return {"email": email_content}
+            
         except Exception as e:
-            return {"error": str(e)}
+            print(f"Error launching app: {e}")
+            # Fallback: create a simple demo
+            import gradio as gr
+            
+            def simple_demo(intent, tone, length):
+                return f"Demo Email:\n\nSubject: {intent}\n\nDear Recipient,\n\nThis is a demo email generated with {tone} tone and {length} length based on your intent: {intent}\n\nBest regards,\n[Your Name]"
+            
+            demo = gr.Interface(
+                fn=simple_demo,
+                inputs=[
+                    gr.Textbox(label="Email Intent", placeholder="e.g., Ask for meeting"),
+                    gr.Dropdown(["Professional", "Friendly", "Formal"], value="Professional", label="Tone"),
+                    gr.Dropdown(["Short", "Medium", "Long"], value="Medium", label="Length")
+                ],
+                outputs=gr.Textbox(label="Generated Email", lines=10),
+                title="LLM Email Autowriter (Demo Mode)",
+                description="Generate professional emails from simple intents."
+            )
+            
+            self.ready = True
+            demo.launch(
+                server_name="0.0.0.0",
+                server_port=7860,
+                share=False
+            )
 
 
 class LLMEmailAutowriterApp(L.LightningApp):
     """
-    Main Lightning App that combines the API and UI
+    Main Lightning App for the email autowriter
     """
     
     def __init__(self):
         super().__init__()
-        
-        # Create the main components
-        self.gradio_serve = EmailAutowriterGradioServe()
-        self.api = LLMEmailAutowriterAPI(
-            cloud_compute=L.CloudCompute("gpu-fast")  # Use GPU for model inference
-        )
+        self.email_work = EmailAutowriterWork()
     
     def configure_layout(self):
-        """Configure the Lightning dashboard layout"""
-        return [
-            {
-                "name": "LLM Email Autowriter - UI",
-                "content": self.gradio_serve
-            },
-            {
-                "name": "API Documentation", 
-                "content": self.api.url + "/docs"
-            }
-        ]
+        """Configure the Lightning UI layout"""
+        return {
+            "name": "LLM Email Autowriter",
+            "content": self.email_work
+        }
 
 
 # Entry point for Lightning AI
@@ -160,5 +106,4 @@ app = LLMEmailAutowriterApp()
 
 if __name__ == "__main__":
     # For local testing
-    import lightning as L
-    L.LightningApp(LLMEmailAutowriterApp()).run()
+    app.run()
