@@ -78,18 +78,18 @@ def launch_qwen_app():
         from app.gradio_ui import create_ui
         
         config = Config()
-        config.GRADIO_SHARE = False  # Don't share publicly on Lightning
+        config.GRADIO_SHARE = True  # Enable public sharing
         config.GRADIO_HOST = "0.0.0.0"
         config.GRADIO_PORT = 7860
         
         ui = create_ui(config)
         logger.info("✅ Qwen 7B Email Autowriter ready!")
         
-        # Launch with Lightning-optimized settings
+        # Launch with public sharing enabled
         ui.launch(
             server_name="0.0.0.0",
             server_port=7860,
-            share=False,  # Lightning handles sharing
+            share=True,  # Create public Gradio link
             show_error=True,
             quiet=False,
             max_threads=10

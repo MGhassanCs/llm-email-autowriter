@@ -15,17 +15,17 @@ def main():
         from app.config import Config
         
         config = Config()
-        config.GRADIO_SHARE = False
-        config.GRADIO_HOST = "127.0.0.1"  # localhost for dev
+        config.GRADIO_SHARE = True  # Enable public sharing
+        config.GRADIO_HOST = "0.0.0.0"  # Allow external access
         config.GRADIO_PORT = 7860
         
         ui = create_ui(config)
-        print("✅ Launching Gradio interface...")
+        print("✅ Launching Gradio interface with public link...")
         
         ui.launch(
-            server_name="127.0.0.1",
+            server_name="0.0.0.0",
             server_port=7860,
-            share=False,
+            share=True,  # Create public link
             show_error=True,
             quiet=False
         )
