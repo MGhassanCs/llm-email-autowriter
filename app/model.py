@@ -5,7 +5,8 @@ Adapted from the prototype notebook's ModelCall class.
 import asyncio
 import logging
 from typing import Dict, List, Optional, Any
-from openai import OpenAI
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from .config import Config
 from .prompt_template import EmailPromptTemplate
 
@@ -14,38 +15,54 @@ logger = logging.getLogger(__name__)
 class EmailGeneratorModel:
     """
     Handles LLM model interactions for email generation.
-    Uses vLLM's OpenAI-compatible API for inference.
+    Downloads and runs Qwen 7B model directly.
     """
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
         self.prompt_template = EmailPromptTemplate()
-        self._client = None
+        self.model = None
+        self.tokenizer = None
         self._initialized = False
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"Using device: {self.device}")
     
-    def _get_client(self) -> OpenAI:
-        """Get or create OpenAI client for vLLM server"""
-        if self._client is None:
-            try:
-                self._client = OpenAI(
-                    base_url=self.config.VLLM_API_BASE,
-                    api_key="EMPTY"  # vLLM doesn't require API key
-                )
-                logger.info(f"Initialized OpenAI client for vLLM server at {self.config.VLLM_API_BASE}")
+    def _load_model(self):
+        """Download and load Qwen 7B model"""
+        if self._initialized:
+            return
+            
+        try:
+            logger.info("Loading Qwen 7B model...")
+            
+            # Use a smaller quantized version for better performance
+            model_name = "Qwen/Qwen2.5-7B-Instruct"
+            
+            logger.info(f"Downloading tokenizer from {model_name}...")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                trust_remote_code=True
+            )
+            
+            logger.info(f"Downloading model from {model_name}...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                device_map="auto" if self.device == "cuda" else None,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True
+            )
+            
+            if self.device == "cpu":
+                self.model = self.model.to(self.device)
                 
-                # Test the connection
-                test_response = self._client.chat.completions.create(
-                    model=self.config.MODEL_NAME,
-                    messages=[{"role": "user", "content": "test"}],
-                    max_tokens=1
-                )
-                logger.info("vLLM server connection successful")
-                
-            except Exception as e:
-                logger.error(f"Failed to connect to vLLM server: {e}")
-                self._client = None  # Reset to None so we can try alternatives
-                raise
-        return self._client
+            self.model.eval()
+            self._initialized = True
+            logger.info(f"✅ Qwen 7B model loaded successfully on {self.device}!")
+            
+        except Exception as e:
+            logger.error(f"Failed to load Qwen 7B model: {e}")
+            raise
     
     def generate_email(
         self,
@@ -57,7 +74,7 @@ class EmailGeneratorModel:
         max_tokens: Optional[int] = None
     ) -> str:
         """
-        Generate an email based on user intent and preferences.
+        Generate an email using the actual Qwen 7B model.
         
         Args:
             intent: User's email intent/purpose
@@ -71,140 +88,69 @@ class EmailGeneratorModel:
             Generated email text
         """
         try:
+            # Load model if not already loaded
+            self._load_model()
+            
             # Set default parameters
             temperature = temperature or self.config.DEFAULT_TEMPERATURE
             top_p = top_p or self.config.DEFAULT_TOP_P
             max_tokens = max_tokens or self.config.TOKEN_LIMITS.get(length, self.config.DEFAULT_MAX_TOKENS)
             
-            # Generate prompt
+            logger.info(f"🚀 Generating email with Qwen 7B - Intent: '{intent[:50]}...', Tone: {tone}, Length: {length}")
+            
+            # Generate prompt using our template
             messages = self.prompt_template.generate_email_prompt(intent, tone, length)
             
-            # Get client and make request
-            client = self._get_client()
+            # Convert messages to chat format for Qwen
+            chat_text = ""
+            for msg in messages:
+                if msg["role"] == "system":
+                    chat_text += f"<|im_start|>system\n{msg['content']}<|im_end|>\n"
+                elif msg["role"] == "user":
+                    chat_text += f"<|im_start|>user\n{msg['content']}<|im_end|>\n"
+            chat_text += "<|im_start|>assistant\n"
             
-            logger.info(f"Generating email with intent: '{intent[:50]}...', tone: {tone}, length: {length}")
+            # Tokenize
+            inputs = self.tokenizer(
+                chat_text,
+                return_tensors="pt",
+                truncation=True,
+                max_length=2048
+            ).to(self.device)
             
-            response = client.chat.completions.create(
-                model=self.config.MODEL_NAME,
-                messages=messages,
-                temperature=temperature,
-                top_p=top_p,
-                max_tokens=max_tokens,
-                stream=False
-            )
+            # Generate
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id
+                )
             
-            if response.choices and len(response.choices) > 0:
-                generated_text = response.choices[0].message.content.strip()
-                logger.info(f"Successfully generated email ({len(generated_text)} characters)")
-                return generated_text
-            else:
-                logger.warning("No response generated from model")
-                return "Error: No response generated from the model."
-                
+            # Decode response
+            response = self.tokenizer.decode(
+                outputs[0][len(inputs.input_ids[0]):],
+                skip_special_tokens=True
+            ).strip()
+            
+            # Clean up the response
+            if "<|im_end|>" in response:
+                response = response.split("<|im_end|>")[0].strip()
+            
+            logger.info(f"✅ Successfully generated email with Qwen 7B ({len(response)} characters)")
+            
+            # Add model info footer
+            response += "\n\n---\nGenerated by Qwen 7B via LLM Email Autowriter"
+            
+            return response
+            
         except Exception as e:
-            logger.error(f"Error generating email with vLLM: {e}")
-            logger.info("Falling back to template-based generation")
-            return self._generate_fallback_email(intent, tone, length)
+            logger.error(f"❌ Error generating email with Qwen 7B: {e}")
+            raise Exception(f"Failed to generate email with Qwen 7B: {str(e)}")
     
-    def _generate_fallback_email(self, intent: str, tone: str, length: str) -> str:
-        """Generate a template-based email when AI model is unavailable"""
-        try:
-            # Template-based email generation
-            tone_styles = {
-                "Professional": {
-                    "greeting": "Dear [Recipient],",
-                    "closing": "Best regards,",
-                    "style": "formal and business-appropriate"
-                },
-                "Friendly": {
-                    "greeting": "Hi [Recipient],",
-                    "closing": "Best wishes,", 
-                    "style": "warm and approachable"
-                },
-                "Formal": {
-                    "greeting": "Dear [Recipient],",
-                    "closing": "Sincerely,",
-                    "style": "very formal and official"
-                },
-                "Casual": {
-                    "greeting": "Hey [Recipient],",
-                    "closing": "Thanks,",
-                    "style": "relaxed and informal"
-                },
-                "Polite": {
-                    "greeting": "Dear [Recipient],",
-                    "closing": "Kind regards,",
-                    "style": "courteous and respectful"
-                }
-            }
-            
-            style = tone_styles.get(tone, tone_styles["Professional"])
-            
-            # Generate subject based on intent
-            subject = f"Re: {intent.strip()}"
-            if len(subject) > 50:
-                subject = subject[:47] + "..."
-            
-            # Generate body based on length
-            if length == "Short":
-                body = f"""I hope this message finds you well.
-
-{intent.strip()}.
-
-Please let me know if you need any additional information."""
-            elif length == "Long":
-                body = f"""I hope this message finds you well.
-
-I am writing to you regarding the following matter: {intent.strip()}.
-
-I would greatly appreciate your assistance with this request. If you require any additional information or documentation to process this request, please do not hesitate to let me know.
-
-I understand that you may need time to review this matter, and I am happy to work with your schedule. Please feel free to contact me if you have any questions or if there is anything else I can provide to facilitate this process.
-
-Thank you very much for your time and consideration. I look forward to hearing from you soon."""
-            else:  # Medium
-                body = f"""I hope this message finds you well.
-
-I am writing to request your assistance with the following: {intent.strip()}.
-
-I would be grateful if you could help me with this matter. Please let me know if you need any additional information from my end.
-
-Thank you for your time and consideration. I look forward to your response."""
-            
-            # Construct the final email
-            email = f"""Subject: {subject}
-
-{style['greeting']}
-
-{body}
-
-{style['closing']}
-[Your Name]
-
----
-Generated by LLM Email Autowriter (Template Mode)
-Tone: {tone} | Length: {length}"""
-            
-            logger.info(f"Generated fallback email for intent: '{intent[:30]}...'") 
-            return email
-            
-        except Exception as e:
-            logger.error(f"Error in fallback generation: {e}")
-            return f"""Subject: {intent}
-
-Dear [Recipient],
-
-I hope this message finds you well.
-
-Regarding: {intent}
-
-[Please customize this template email based on your specific needs]
-
-Best regards,
-[Your Name]
-
----
-Generated by LLM Email Autowriter (Basic Template)"""
     
     async def generate_email_async(
         self,
@@ -228,49 +174,39 @@ Generated by LLM Email Autowriter (Basic Template)"""
     
     def health_check(self) -> Dict[str, Any]:
         """
-        Check if the model service is healthy and responsive.
+        Check if the Qwen 7B model is loaded and responsive.
         
         Returns:
             Dictionary with health status information
         """
         try:
-            client = self._get_client()
+            # Try to load the model
+            self._load_model()
             
-            # Try a simple generation request
-            test_messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Say 'Hello' in one word."}
-            ]
-            
-            response = client.chat.completions.create(
-                model=self.config.MODEL_NAME,
-                messages=test_messages,
-                max_tokens=10,
-                temperature=0.1
+            # Try a simple generation
+            test_response = self.generate_email(
+                intent="test email",
+                tone="Professional", 
+                length="Short",
+                max_tokens=50
             )
             
-            if response.choices:
-                return {
-                    "status": "healthy",
-                    "model": self.config.MODEL_NAME,
-                    "api_base": self.config.VLLM_API_BASE,
-                    "test_response": response.choices[0].message.content.strip()
-                }
-            else:
-                return {
-                    "status": "unhealthy",
-                    "error": "No response from model",
-                    "model": self.config.MODEL_NAME,
-                    "api_base": self.config.VLLM_API_BASE
-                }
+            return {
+                "status": "healthy",
+                "model": "Qwen/Qwen2.5-7B-Instruct",
+                "device": self.device,
+                "initialized": self._initialized,
+                "test_response_length": len(test_response)
+            }
                 
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return {
                 "status": "unhealthy",
                 "error": str(e),
-                "model": self.config.MODEL_NAME,
-                "api_base": self.config.VLLM_API_BASE
+                "model": "Qwen/Qwen2.5-7B-Instruct",
+                "device": self.device,
+                "initialized": self._initialized
             }
     
     def get_model_info(self) -> Dict[str, Any]:
@@ -281,8 +217,10 @@ Generated by LLM Email Autowriter (Basic Template)"""
             Dictionary with model information
         """
         return {
-            "model_name": self.config.MODEL_NAME,
-            "api_base": self.config.VLLM_API_BASE,
+            "model_name": "Qwen/Qwen2.5-7B-Instruct",
+            "device": self.device,
+            "model_type": "Direct Transformers (No API)",
+            "initialized": self._initialized,
             "default_temperature": self.config.DEFAULT_TEMPERATURE,
             "default_top_p": self.config.DEFAULT_TOP_P,
             "default_max_tokens": self.config.DEFAULT_MAX_TOKENS,
