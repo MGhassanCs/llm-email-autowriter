@@ -32,56 +32,21 @@ class EmailAutowriterWork(L.LightningWork):
         os.environ["VLLM_HOST"] = "localhost"  # Mock vLLM for now
         os.environ["VLLM_PORT"] = "8000"
         
-        # Import after installing dependencies
+        # Use the optimized launcher
         try:
-            from app.gradio_ui import create_ui
-            from app.config import Config
+            import subprocess
+            import sys
             
-            # Create configuration for Lightning
-            config = Config()
-            config.GRADIO_SHARE = False
-            config.GRADIO_HOST = "0.0.0.0"
-            config.GRADIO_PORT = 7860
+            # Run the optimized launcher
+            result = subprocess.run([
+                sys.executable, "lightning_launch.py"
+            ], check=True)
             
-            # Create and launch the UI
-            ui = create_ui(config)
             self.ready = True
-            
-            # Launch with Lightning-friendly settings
-            ui.launch(
-                server_name="0.0.0.0",
-                server_port=7860,
-                share=False,
-                show_error=True,
-                quiet=False
-            )
             
         except Exception as e:
             print(f"Error launching app: {e}")
-            # Fallback: create a simple demo
-            import gradio as gr
-            
-            def simple_demo(intent, tone, length):
-                return f"Demo Email:\n\nSubject: {intent}\n\nDear Recipient,\n\nThis is a demo email generated with {tone} tone and {length} length based on your intent: {intent}\n\nBest regards,\n[Your Name]"
-            
-            demo = gr.Interface(
-                fn=simple_demo,
-                inputs=[
-                    gr.Textbox(label="Email Intent", placeholder="e.g., Ask for meeting"),
-                    gr.Dropdown(["Professional", "Friendly", "Formal"], value="Professional", label="Tone"),
-                    gr.Dropdown(["Short", "Medium", "Long"], value="Medium", label="Length")
-                ],
-                outputs=gr.Textbox(label="Generated Email", lines=10),
-                title="LLM Email Autowriter (Demo Mode)",
-                description="Generate professional emails from simple intents."
-            )
-            
             self.ready = True
-            demo.launch(
-                server_name="0.0.0.0",
-                server_port=7860,
-                share=False
-            )
 
 
 class LLMEmailAutowriterApp(L.LightningApp):

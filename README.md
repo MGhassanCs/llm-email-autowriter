@@ -41,22 +41,16 @@ Welcome to the LLM Email Autowriter project - an application that helps you gene
 4. **Run the application**
     - **Lightning AI (Recommended for Cloud)**
       ```bash
-      # Push to GitHub, then run on Lightning AI:
       lightning run app lightning_app.py --cloud
-      # Or use the optimized launcher:
-      python lightning_launch.py
       ```
-    - **Via Docker**
+    - **Local Development**
+      ```bash
+      python local_dev.py
+      ```
+    - **Docker (Optional)**
       ```bash
       docker build -t llm-email-autowriter .
-      docker run -p 8000:8000 -p 7860:7860 llm-email-autowriter
-      ```
-    - **Locally**
-      ```bash
-      python run_app.py
-      # Or separately:
-      uvicorn app.main:app --reload
-      python -m app.gradio_ui
+      docker run -p 7860:7860 llm-email-autowriter
       ```
 
 ## Configuration

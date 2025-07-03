@@ -1,35 +1,22 @@
 # Core dependencies
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-gradio>=5.0.0
-pydantic>=2.0.0
+fastapi
+uvicorn[standard]
+gradio
+pydantic
 
 # LLM and AI dependencies
-transformers>=4.35.0
-torch>=2.0.0
-vllm>=0.6.0
-
-# Web and networking
-httpx>=0.25.0
-requests>=2.28.0
-aiofiles>=23.0.0
-
-# Data handling
-numpy>=1.24.0
-pandas>=2.0.0
+transformers
+torch
+vllm
 
 # Utilities
-python-dotenv>=1.0.0
-pyyaml>=6.0
-python-multipart>=0.0.18
+python-dotenv
+pyyaml
+requests
 
-# Development and deployment
-lightning>=2.0.0
-pytest>=7.0.0
-black>=23.0.0
-isort>=5.0.0
+# Lightning AI
+lightning
 
-# Optional: Additional model support
-huggingface-hub>=0.16.0
-accelerate>=0.20.0
-# auto-gptq  # For quantized models
+# Model support
+huggingface-hub
+accelerate

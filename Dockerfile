@@ -29,9 +29,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 COPY notebooks/ ./notebooks/
-COPY .env .env.example
-COPY run_app.py .
+COPY .env .
 COPY lightning_app.py .
+COPY lightning_launch.py .
+COPY local_dev.py .
 
 # Create necessary directories
 RUN mkdir -p logs data
