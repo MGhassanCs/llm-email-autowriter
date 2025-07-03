@@ -92,7 +92,6 @@ def launch_qwen_app():
             share=False,  # Lightning handles sharing
             show_error=True,
             quiet=False,
-            enable_queue=True,  # Important for Lightning AI
             max_threads=10
         )
         
