@@ -24,9 +24,9 @@ def setup_environment():
     print("Environment configured for Lightning AI")
 
 def run_gradio_app():
-    """Launch the Gradio application"""
+    """Launch the Gradio application with Qwen 7B model"""
     try:
-        print("Attempting to launch full application...")
+        print("🚀 Launching LLM Email Autowriter with Qwen 7B model...")
         from app.gradio_ui import create_ui
         from app.config import Config
         
@@ -36,9 +36,23 @@ def run_gradio_app():
         config.GRADIO_HOST = "0.0.0.0"
         config.GRADIO_PORT = 7860
         
+        # Test model loading
+        print("🔍 Testing Qwen 7B model...")
+        from app.model import get_model
+        model = get_model()
+        
+        # Try a quick test
+        test_result = model.generate_email(
+            intent="test",
+            tone="Professional",
+            length="Short",
+            max_tokens=50
+        )
+        print(f"✅ Qwen 7B model working! Test response: {len(test_result)} characters")
+        
         # Create and launch UI
         ui = create_ui(config)
-        print("✅ Full application ready! Launching Gradio interface...")
+        print("✅ Full Qwen 7B application ready! Launching Gradio interface...")
         
         ui.launch(
             server_name="0.0.0.0",
@@ -49,9 +63,11 @@ def run_gradio_app():
         )
         
     except Exception as e:
-        print(f"⚠️ Could not launch full app: {e}")
-        print("🔄 Launching demo mode...")
-        launch_demo_mode()
+        print(f"❌ Could not launch Qwen 7B app: {e}")
+        print(f"Error details: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise e  # Don't fall back to demo - we want the real model
 
 def launch_demo_mode():
     """Launch a simplified demo version"""
