@@ -4,7 +4,7 @@ from typing import Optional
 
 class Config:
     # Model Configuration
-    MODEL_NAME: str = "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int8"
+    MODEL_NAME: str = "Qwen/Qwen2.5-7B-Instruct"
     MODEL_DTYPE: str = "auto"
     
     # Generation Parameters

@@ -10,11 +10,12 @@ import os
 
 class EmailAutowriterWork(L.LightningWork):
     """
-    Simplified Lightning Work for the email autowriter application
+    Lightning Work for the Qwen 7B email autowriter application
     """
     
     def __init__(self):
-        super().__init__(cloud_compute=L.CloudCompute("cpu-medium"))
+        # Use GPU for Qwen 7B model
+        super().__init__(cloud_compute=L.CloudCompute("gpu"))
         self.ready = False
     
     def run(self):

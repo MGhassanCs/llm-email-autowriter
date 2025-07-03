@@ -14,8 +14,10 @@ Welcome to the LLM Email Autowriter project - an application that helps you gene
 
 ### Prerequisites
 
-- Docker
 - Python 3.10+
+- GPU (recommended for Qwen 7B model)
+- Lightning AI account (for cloud deployment)
+- Docker (for local containerized deployment)
 
 ### Installation
 
@@ -37,13 +39,22 @@ Welcome to the LLM Email Autowriter project - an application that helps you gene
     ```
 
 4. **Run the application**
-    - **Via Docker (Recommended)**
+    - **Lightning AI (Recommended for Cloud)**
+      ```bash
+      # Push to GitHub, then run on Lightning AI:
+      lightning run app lightning_app.py --cloud
+      # Or use the optimized launcher:
+      python lightning_launch.py
+      ```
+    - **Via Docker**
       ```bash
       docker build -t llm-email-autowriter .
       docker run -p 8000:8000 -p 7860:7860 llm-email-autowriter
       ```
     - **Locally**
       ```bash
+      python run_app.py
+      # Or separately:
       uvicorn app.main:app --reload
       python -m app.gradio_ui
       ```

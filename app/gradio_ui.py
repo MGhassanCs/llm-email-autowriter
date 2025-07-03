@@ -174,7 +174,8 @@ class EmailGeneratorUI:
                 model_info = self.model.get_model_info()
                 gr.Markdown(f"""
                 **Model:** {model_info['model_name']}  
-                **API Base:** {model_info['api_base']}  
+                **Model Type:** {model_info['model_type']}  
+                **Device:** {model_info['device']}  
                 **Available Tones:** {', '.join(model_info['available_tones'])}  
                 **Available Lengths:** {', '.join(model_info['available_lengths'])}  
                 **Token Limits:** {model_info['token_limits']}

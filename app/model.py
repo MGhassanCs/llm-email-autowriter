@@ -1,12 +1,11 @@
 """
-Model handler for LLM inference using vLLM OpenAI-compatible API.
+Model handler for LLM inference using vLLM.
 Adapted from the prototype notebook's ModelCall class.
 """
 import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
 from .config import Config
 from .prompt_template import EmailPromptTemplate
 
@@ -15,36 +14,60 @@ logger = logging.getLogger(__name__)
 class EmailGeneratorModel:
     """
     Handles LLM model interactions for email generation.
-    Downloads and runs Qwen 7B model directly.
+    Uses vLLM for efficient inference as shown in the prototype.
     """
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
         self.prompt_template = EmailPromptTemplate()
-        self.model = None
-        self.tokenizer = None
+        self.llm = None
         self._initialized = False
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {self.device}")
     
     def _load_model(self):
-        """Download and load Qwen 7B model"""
+        """Load vLLM model"""
         if self._initialized:
             return
             
         try:
-            logger.info("Loading Qwen 7B model...")
+            from vllm import LLM, SamplingParams
+            logger.info("Loading model with vLLM...")
             
-            # Use a smaller quantized version for better performance
-            model_name = "Qwen/Qwen2.5-7B-Instruct"
+            # Use the model specified in config
+            model_name = self.config.MODEL_NAME
+            logger.info(f"Loading model: {model_name}")
             
-            logger.info(f"Downloading tokenizer from {model_name}...")
+            # Initialize vLLM
+            self.llm = LLM(
+                model=model_name,
+                dtype=self.config.MODEL_DTYPE,
+                trust_remote_code=True
+            )
+            
+            self._initialized = True
+            logger.info(f"✅ vLLM model {model_name} loaded successfully!")
+            
+        except ImportError:
+            logger.error("vLLM not available, falling back to transformers")
+            self._load_model_transformers()
+        except Exception as e:
+            logger.error(f"Failed to load vLLM model: {e}")
+            logger.info("Attempting fallback to transformers...")
+            self._load_model_transformers()
+    
+    def _load_model_transformers(self):
+        """Fallback to transformers if vLLM fails"""
+        try:
+            from transformers import AutoTokenizer, AutoModelForCausalLM
+            logger.info("Loading model with transformers (fallback)...")
+            
+            model_name = self.config.MODEL_NAME
+            
             self.tokenizer = AutoTokenizer.from_pretrained(
                 model_name,
                 trust_remote_code=True
             )
-            
-            logger.info(f"Downloading model from {model_name}...")
             
             # Load model with proper device handling
             if self.device == "cuda":
@@ -67,10 +90,10 @@ class EmailGeneratorModel:
                 
             self.model.eval()
             self._initialized = True
-            logger.info(f"✅ Qwen 7B model loaded successfully on {self.device}!")
+            logger.info(f"✅ Transformers model {model_name} loaded successfully on {self.device}!")
             
         except Exception as e:
-            logger.error(f"Failed to load Qwen 7B model: {e}")
+            logger.error(f"Failed to load model with transformers: {e}")
             raise
     
     def generate_email(
@@ -83,7 +106,7 @@ class EmailGeneratorModel:
         max_tokens: Optional[int] = None
     ) -> str:
         """
-        Generate an email using the actual Qwen 7B model.
+        Generate an email using vLLM or transformers fallback.
         
         Args:
             intent: User's email intent/purpose
@@ -105,11 +128,46 @@ class EmailGeneratorModel:
             top_p = top_p or self.config.DEFAULT_TOP_P
             max_tokens = max_tokens or self.config.TOKEN_LIMITS.get(length, self.config.DEFAULT_MAX_TOKENS)
             
-            logger.info(f"🚀 Generating email with Qwen 7B - Intent: '{intent[:50]}...', Tone: {tone}, Length: {length}")
+            logger.info(f"🚀 Generating email - Intent: '{intent[:50]}...', Tone: {tone}, Length: {length}")
             
             # Generate prompt using our template
             messages = self.prompt_template.generate_email_prompt(intent, tone, length)
             
+            # Use vLLM if available
+            if self.llm is not None:
+                return self._generate_with_vllm(messages, temperature, top_p, max_tokens)
+            else:
+                return self._generate_with_transformers(messages, temperature, top_p, max_tokens)
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating email: {e}")
+            raise Exception(f"Failed to generate email: {str(e)}")
+    
+    def _generate_with_vllm(self, messages, temperature, top_p, max_tokens):
+        """Generate using vLLM (like the prototype)"""
+        try:
+            from vllm import SamplingParams
+            
+            sampling_params = SamplingParams(
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens
+            )
+            
+            # Use vLLM's chat interface
+            outputs = self.llm.chat(messages, sampling_params)
+            response = outputs[0].outputs[0].text
+            
+            logger.info(f"✅ Successfully generated email with vLLM ({len(response)} characters)")
+            return response
+            
+        except Exception as e:
+            logger.error(f"vLLM generation failed: {e}")
+            raise
+    
+    def _generate_with_transformers(self, messages, temperature, top_p, max_tokens):
+        """Fallback generation using transformers"""
+        try:
             # Convert messages to chat format for Qwen
             chat_text = ""
             for msg in messages:
@@ -149,16 +207,12 @@ class EmailGeneratorModel:
             if "<|im_end|>" in response:
                 response = response.split("<|im_end|>")[0].strip()
             
-            logger.info(f"✅ Successfully generated email with Qwen 7B ({len(response)} characters)")
-            
-            # Add model info footer
-            response += "\n\n---\nGenerated by Qwen 7B via LLM Email Autowriter"
-            
+            logger.info(f"✅ Successfully generated email with transformers ({len(response)} characters)")
             return response
             
         except Exception as e:
-            logger.error(f"❌ Error generating email with Qwen 7B: {e}")
-            raise Exception(f"Failed to generate email with Qwen 7B: {str(e)}")
+            logger.error(f"Transformers generation failed: {e}")
+            raise
     
     
     async def generate_email_async(
@@ -202,7 +256,7 @@ class EmailGeneratorModel:
             
             return {
                 "status": "healthy",
-                "model": "Qwen/Qwen2.5-7B-Instruct",
+                "model": self.config.MODEL_NAME,
                 "device": self.device,
                 "initialized": self._initialized,
                 "test_response_length": len(test_response)
@@ -213,7 +267,7 @@ class EmailGeneratorModel:
             return {
                 "status": "unhealthy",
                 "error": str(e),
-                "model": "Qwen/Qwen2.5-7B-Instruct",
+                "model": self.config.MODEL_NAME,
                 "device": self.device,
                 "initialized": self._initialized
             }
@@ -226,9 +280,9 @@ class EmailGeneratorModel:
             Dictionary with model information
         """
         return {
-            "model_name": "Qwen/Qwen2.5-7B-Instruct",
+            "model_name": self.config.MODEL_NAME,
             "device": self.device,
-            "model_type": "Direct Transformers (No API)",
+            "model_type": "vLLM with Transformers Fallback",
             "initialized": self._initialized,
             "default_temperature": self.config.DEFAULT_TEMPERATURE,
             "default_top_p": self.config.DEFAULT_TOP_P,

@@ -1,8 +1,8 @@
 """
-LLM Email Autowriter Application
+LLM Email Autowriter Application Package
 
 A modular, production-ready application for generating professional emails
-using local LLMs through vLLM's OpenAI-compatible API.
+using local LLMs through vLLM with transformers fallback.
 
 Components:
 - config: Configuration management
@@ -18,6 +18,7 @@ from .prompt_template import EmailPromptTemplate
 
 __version__ = "1.0.0"
 __author__ = "LLM Email Autowriter Team"
+__description__ = "AI-powered email generation using vLLM and Gradio"
 
 __all__ = [
     "Config",
