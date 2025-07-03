@@ -45,15 +45,24 @@ class EmailGeneratorModel:
             )
             
             logger.info(f"Downloading model from {model_name}...")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                device_map="auto" if self.device == "cuda" else None,
-                trust_remote_code=True,
-                low_cpu_mem_usage=True
-            )
             
-            if self.device == "cpu":
+            # Load model with proper device handling
+            if self.device == "cuda":
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float16,
+                    device_map="auto",
+                    trust_remote_code=True,
+                    low_cpu_mem_usage=True
+                )
+            else:
+                # For CPU, load without device_map
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True,
+                    low_cpu_mem_usage=True
+                )
                 self.model = self.model.to(self.device)
                 
             self.model.eval()

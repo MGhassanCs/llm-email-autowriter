@@ -31,6 +31,6 @@ black>=23.0.0
 isort>=5.0.0
 
 # Optional: Additional model support
-# huggingface-hub>=0.16.0
-# accelerate>=0.20.0
+huggingface-hub>=0.16.0
+accelerate>=0.20.0
 # auto-gptq  # For quantized models
