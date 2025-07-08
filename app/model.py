@@ -88,7 +88,7 @@ class EmailGeneratorModel:
                 )
                 self.model = self.model.to(self.device)
                 
-            self.model.eval()
+            self.model.eval()  #puts model in evaluation mode, no gradient needed
             self._initialized = True
             logger.info(f"✅ Transformers model {model_name} loaded successfully on {self.device}!")
             
@@ -203,7 +203,7 @@ class EmailGeneratorModel:
                 skip_special_tokens=True
             ).strip()
             
-            # Clean up the response
+            # Clean up the response, cleans trailing assistant message end tokens.
             if "<|im_end|>" in response:
                 response = response.split("<|im_end|>")[0].strip()
             

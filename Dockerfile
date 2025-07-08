@@ -1,54 +1,41 @@
-# Multi-stage build for LLM Email Autowriter
-FROM python:3.10-slim as base
+# Use lightweight Python 3.10 base image
+FROM python:3.10-slim
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# Set environment variables to make Python behave well in containers
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install system dependencies
+# Install required system packages
+# - curl: for testing endpoints or health checks
+# - build-essential: needed for compiling Python packages like tokenizers
 RUN apt-get update && apt-get install -y \
-    git \
     curl \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app
-
-# Set working directory
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy requirements first to take advantage of Docker cache
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code and scripts
 COPY app/ ./app/
-COPY notebooks/ ./notebooks/
+
+# Optional: copy .env file if your app loads it at runtime
 COPY .env .
+
+# Optional: include Lightning scripts if used to launch the app
 COPY lightning_app.py .
 COPY lightning_launch.py .
-COPY local_dev.py .
 
-# Create necessary directories
-RUN mkdir -p logs data
+# Expose FastAPI and Gradio ports
+EXPOSE 8000
+EXPOSE 7860
 
-# Change ownership to app user
-RUN chown -R app:app /app
-
-# Switch to non-root user
-USER app
-
-# Expose ports
-EXPOSE 8000 7860
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Default command - can be overridden
+# Set the default command to run the app
+# Update this if your app is started from a different script
 CMD ["python", "-m", "app.main"]

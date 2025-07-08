@@ -44,7 +44,8 @@ class EmailPromptTemplate:
         tone_instruction = self._get_tone_instructions(tone)
         length_instruction = self._get_length_instructions(length)
         
-        return f"""You are a helpful email writing assistant. You specialize in writing professional, well-structured emails based on user intents.
+        return f"""
+        You are a helpful email writing assistant. You specialize in writing professional, well-structured emails based on user intents.
 
 Instructions:
 - {tone_instruction}
